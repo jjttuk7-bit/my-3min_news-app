@@ -83,7 +83,6 @@ with st.sidebar:
 def fetch_news(category):
     """카테고리에 맞는 구글 뉴스 RSS를 가져옵니다."""
     # 카테고리별 정확한 URL 설정 (Google News KR Standard URLs)
-    # These use the standard section topics which are more stable
     if category == "Politics":
         url = "https://news.google.com/rss/headlines/section/topic/POLITICS?hl=ko&gl=KR&ceid=KR:ko"
     elif category == "Economy":
@@ -130,10 +129,13 @@ def fetch_news(category):
         })
     return articles
 
-@st.cache_data(ttl=86400, show_spinner=False) # 요약문은 24시간 동안 저장! (API 절약 핵심)
+@st.cache_data(ttl=86400, show_spinner=False) # 요약문은 24시간 동안 저장!
 def generate_summary(text, _model):
     """Gemini를 사용하여 3줄 요약을 생성합니다."""
     try:
+        # API 호출 속도 조절을 위한 대기 (Rate Limit 방지)
+        time.sleep(1) 
+        
         prompt = f"""
         당신은 유능한 뉴스 조수입니다. 
         다음 뉴스 기사의 제목과 내용을 바탕으로 핵심 내용을 정확히 3개의 글머리 기호로 요약해 주세요.
@@ -157,7 +159,8 @@ selected_category = st.radio("카테고리 선택", categories, horizontal=True)
 
 if api_key:
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    # 더 안정적인 모델로 변경 (gemini-1.5-flash)
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
     with st.spinner(f"{selected_category} 뉴스를 가져오는 중..."):
         articles = fetch_news(selected_category)
