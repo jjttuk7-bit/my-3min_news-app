@@ -3,3 +3,4 @@ google-generativeai
 feedparser
 beautifulsoup4
 python-dateutil
+requests

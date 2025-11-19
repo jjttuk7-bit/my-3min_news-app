@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 from dateutil import parser
 import time
+import requests
 
 # --- Page Config ---
 st.set_page_config(
@@ -81,14 +82,6 @@ with st.sidebar:
 @st.cache_data(ttl=3600)  # Cache news for 1 hour
 def fetch_news(category):
     """Fetches news from Google News RSS based on category."""
-    rss_urls = {
-        "Politics": "https://news.google.com/rss/topics/CAAqIggKIhxDQkFTRDgwQ0VnSm5iV1ZmY21WaWJ5Z3lDZ29FVEJpQ1N3?hl=ko&gl=KR&ceid=KR%3Ako",
-        "Economy": "https://news.google.com/rss/topics/CAAqIggKIhxDQkFTRDgwQ0VnSm5iV1ZmY21WaWJ5Z3lDZ29FVEJpQ1N3?hl=ko&gl=KR&ceid=KR%3Ako", # Placeholder, adjusted below if needed
-        "Society": "https://news.google.com/rss/topics/CAAqIggKIhxDQkFTRDgwQ0VnSm5iV1ZmY21WaWJ5Z3lDZ29FVEJpQ1N3?hl=ko&gl=KR&ceid=KR%3Ako", # Placeholder
-        "International": "https://news.google.com/rss/topics/CAAqIggKIhxDQkFTRDgwQ0VnSm5iV1ZmY21WaWJ5Z3lDZ29FVEJpQ1N3?hl=ko&gl=KR&ceid=KR%3Ako", # Placeholder
-        "IT/Science": "https://news.google.com/rss/topics/CAAqIggKIhxDQkFTRDgwQ0VnSm5iV1ZmY21WaWJ5Z3lDZ29FVEJpQ1N3?hl=ko&gl=KR&ceid=KR%3Ako", # Placeholder
-    }
-    
     # Correct URLs for specific categories (Google News KR)
     if category == "Politics":
         url = "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERJU0FtdHZLQUFQAQ?hl=ko&gl=KR&ceid=KR%3Ako"
@@ -103,9 +96,25 @@ def fetch_news(category):
     else:
         url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
 
-    feed = feedparser.parse(url)
+    # Use requests with a User-Agent to avoid 403 Forbidden from Google
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        feed = feedparser.parse(response.content)
+    except Exception as e:
+        st.error(f"Error fetching news: {e}")
+        return []
+
     articles = []
     
+    if not feed.entries:
+        st.warning("No news entries found. Google might be blocking the request.")
+        return []
+
     for entry in feed.entries[:5]:  # Get top 5
         try:
             published = parser.parse(entry.published).strftime("%Y-%m-%d %H:%M")
@@ -151,7 +160,10 @@ if api_key:
 
     with st.spinner(f"Fetching {selected_category} news..."):
         articles = fetch_news(selected_category)
-        st.success(f"✅ Loaded top 5 articles for {selected_category}")
+        if articles:
+            st.success(f"✅ Loaded top 5 articles for {selected_category}")
+        else:
+            st.error(f"❌ Failed to load articles for {selected_category}")
 
     for article in articles:
         st.markdown(f"""
