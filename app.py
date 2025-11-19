@@ -62,41 +62,42 @@ st.markdown("""
 
 # --- Sidebar & Settings ---
 with st.sidebar:
-    st.header("📰 Settings")
+    st.header("📰 설정")
     
     # API Key Management
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        api_key = st.text_input("Enter Gemini API Key", type="password")
+        api_key = st.text_input("Gemini API 키를 입력하세요", type="password")
         if api_key:
-            st.success("API Key entered!")
+            st.success("API 키가 입력되었습니다!")
     else:
-        st.success("✅ API Key loaded from Secrets")
+        st.success("✅ API 키가 로드되었습니다")
 
     st.markdown("---")
-    st.markdown("### About")
+    st.markdown("### 정보")
     st.markdown("Made with ❤️ using Streamlit & Gemini")
 
 # --- Functions ---
 
-@st.cache_data(ttl=3600)  # Cache news for 1 hour
+@st.cache_data(ttl=3600)  # 뉴스는 1시간 동안 저장(캐싱)
 def fetch_news(category):
-    """Fetches news from Google News RSS based on category."""
-    # Correct URLs for specific categories (Google News KR)
+    """카테고리에 맞는 구글 뉴스 RSS를 가져옵니다."""
+    # 카테고리별 정확한 URL 설정 (Google News KR Standard URLs)
+    # These use the standard section topics which are more stable
     if category == "Politics":
-        url = "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNRFZ4ZERJU0FtdHZLQUFQAQ?hl=ko&gl=KR&ceid=KR%3Ako"
+        url = "https://news.google.com/rss/headlines/section/topic/POLITICS?hl=ko&gl=KR&ceid=KR:ko"
     elif category == "Economy":
-        url = "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNR2PoWjJJU0FtdHZLQUFQAQ?hl=ko&gl=KR&ceid=KR%3Ako"
+        url = "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=ko&gl=KR&ceid=KR:ko"
     elif category == "Society":
-        url = "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNRmh6Y21JU0FtdHZLQUFQAQ?hl=ko&gl=KR&ceid=KR%3Ako"
+        url = "https://news.google.com/rss/headlines/section/topic/NATION?hl=ko&gl=KR&ceid=KR:ko"
     elif category == "International":
-        url = "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNR5Z0WjJJU0FtdHZLQUFQAQ?hl=ko&gl=KR&ceid=KR%3Ako"
+        url = "https://news.google.com/rss/headlines/section/topic/WORLD?hl=ko&gl=KR&ceid=KR:ko"
     elif category == "IT/Science":
-        url = "https://news.google.com/rss/topics/CAAqIQgKIhtDQkFTRGdvSUwyMHZNR1J4Y1hJU0FtdHZLQUFQAQ?hl=ko&gl=KR&ceid=KR%3Ako"
+        url = "https://news.google.com/rss/headlines/section/topic/SCIENCE_AND_TECHNOLOGY?hl=ko&gl=KR&ceid=KR:ko"
     else:
         url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
 
-    # Use requests with a User-Agent to avoid 403 Forbidden from Google
+    # 구글의 차단을 피하기 위해 '사람인 척' 하는 헤더 추가
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
@@ -106,20 +107,20 @@ def fetch_news(category):
         response.raise_for_status()
         feed = feedparser.parse(response.content)
     except Exception as e:
-        st.error(f"Error fetching news: {e}")
+        st.error(f"뉴스 가져오기 실패: {e}")
         return []
 
     articles = []
     
     if not feed.entries:
-        st.warning("No news entries found. Google might be blocking the request.")
+        st.warning("뉴스를 찾을 수 없습니다. 구글이 요청을 차단했을 수 있습니다.")
         return []
 
-    for entry in feed.entries[:5]:  # Get top 5
+    for entry in feed.entries[:5]:  # 상위 5개 기사
         try:
             published = parser.parse(entry.published).strftime("%Y-%m-%d %H:%M")
         except:
-            published = "Unknown Date"
+            published = "날짜 없음"
             
         articles.append({
             "title": entry.title,
@@ -129,41 +130,41 @@ def fetch_news(category):
         })
     return articles
 
-@st.cache_data(ttl=86400, show_spinner=False) # Cache summaries for 24 hours!
+@st.cache_data(ttl=86400, show_spinner=False) # 요약문은 24시간 동안 저장! (API 절약 핵심)
 def generate_summary(text, _model):
-    """Generates a 3-line summary using Gemini."""
+    """Gemini를 사용하여 3줄 요약을 생성합니다."""
     try:
         prompt = f"""
-        You are a helpful news assistant. 
-        Summarize the following news article title and snippet into exactly 3 bullet points in Korean.
-        Keep it concise and easy to understand.
+        당신은 유능한 뉴스 조수입니다. 
+        다음 뉴스 기사의 제목과 내용을 바탕으로 핵심 내용을 정확히 3개의 글머리 기호로 요약해 주세요.
+        한국어로 간결하고 이해하기 쉽게 작성해 주세요.
         
-        News: {text}
+        뉴스: {text}
         """
         response = _model.generate_content(prompt)
         return response.text
     except Exception as e:
         if "429" in str(e):
-            return "⚠️ API Quota Exceeded. Please try again later."
-        return f"⚠️ Error: {str(e)}"
+            return "⚠️ 사용량이 초과되었습니다. 잠시 후 다시 시도해주세요."
+        return f"⚠️ 오류 발생: {str(e)}"
 
 # --- Main UI ---
 
-st.title("Today's 3-Minute News ☕")
+st.title("오늘의 3분 뉴스 ☕")
 
 categories = ["Politics", "Economy", "Society", "International", "IT/Science"]
-selected_category = st.radio("Select Category", categories, horizontal=True)
+selected_category = st.radio("카테고리 선택", categories, horizontal=True)
 
 if api_key:
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-2.0-flash')
 
-    with st.spinner(f"Fetching {selected_category} news..."):
+    with st.spinner(f"{selected_category} 뉴스를 가져오는 중..."):
         articles = fetch_news(selected_category)
         if articles:
-            st.success(f"✅ Loaded top 5 articles for {selected_category}")
+            st.success(f"✅ {selected_category} 최신 기사 5개를 가져왔습니다!")
         else:
-            st.error(f"❌ Failed to load articles for {selected_category}")
+            st.error(f"❌ {selected_category} 기사를 가져오지 못했습니다.")
 
     for article in articles:
         st.markdown(f"""
@@ -179,23 +180,20 @@ if api_key:
         summary_placeholder = st.empty()
         
         with summary_placeholder.container():
-             # Check if we have a cached result implicitly via the function call
-             # We can't easily check cache existence without calling it, but st.cache_data handles it.
-             # To make the UI smoother, we just call it.
-             
+             # 캐시된 결과가 있는지 확인
              summary = generate_summary(content_to_summarize, model)
              
-             if "Quota Exceeded" in summary:
+             if "사용량이 초과되었습니다" in summary:
                  st.markdown(f"""
                     <div class="error-box">
                         {summary}<br>
-                        <small>Don't worry! Since we are caching results, try refreshing in a minute.</small>
+                        <small>걱정 마세요! 결과가 저장되고 있으니 1분 뒤에 새로고침 해보세요.</small>
                     </div>
                  """, unsafe_allow_html=True)
              else:
                  st.markdown(f"""
                     <div class="summary-box">
-                        <div class="summary-title">⚡ 3-Line Summary</div>
+                        <div class="summary-title">⚡ 3줄 요약</div>
                         {summary}
                     </div>
                  """, unsafe_allow_html=True)
@@ -203,4 +201,4 @@ if api_key:
         st.markdown("</div>", unsafe_allow_html=True)
 
 else:
-    st.warning("⚠️ Please enter your Gemini API Key in the sidebar to generate summaries.")
+    st.warning("⚠️ 사이드바에 Gemini API 키를 입력해주세요.")
