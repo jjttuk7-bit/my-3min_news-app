@@ -80,7 +80,13 @@ st.markdown("""
 # Sidebar
 with st.sidebar:
     st.title("📰 Settings")
-    api_key = st.text_input("Gemini API Key", value="AIzaSyBQzU6DZYDEP3QEWco-F_bq5dV8H5lXtko", type="password", help="Get your key from Google AI Studio")
+    
+    # Check for API Key in Secrets
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        st.success("✅ API Key loaded from Secrets")
+    else:
+        api_key = st.text_input("Gemini API Key", value="AIzaSyBQzU6DZYDEP3QEWco-F_bq5dV8H5lXtko", type="password", help="Get your key from Google AI Studio")
     
     st.markdown("---")
     
