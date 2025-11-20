@@ -159,8 +159,8 @@ selected_category = st.radio("카테고리 선택", categories, horizontal=True)
 
 if api_key:
     genai.configure(api_key=api_key)
-    # 더 안정적인 모델로 변경 (gemini-1.5-flash)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # 가장 안정적인 모델로 변경 (gemini-pro)
+    model = genai.GenerativeModel('gemini-pro')
 
     with st.spinner(f"{selected_category} 뉴스를 가져오는 중..."):
         articles = fetch_news(selected_category)
