@@ -6,6 +6,7 @@ from datetime import datetime
 from dateutil import parser
 import time
 import requests
+import random
 
 # --- Page Config ---
 st.set_page_config(
@@ -143,7 +144,8 @@ def fetch_news(category):
         st.warning("뉴스를 찾을 수 없습니다.")
         return []
 
-    for entry in feed.entries[:5]:
+    # ★ 중요: 기사 개수를 3개로 줄임 (API 사용량 절약)
+    for entry in feed.entries[:3]:
         try:
             published = parser.parse(entry.published).strftime("%Y-%m-%d %H:%M")
         except:
@@ -161,8 +163,6 @@ def fetch_news(category):
 @st.cache_data(ttl=86400, show_spinner=False)
 def _generate_summary_api_call(text, model_name):
     """실제 API 호출을 수행하는 함수 (성공 시에만 결과 반환)"""
-    # 속도 제한을 피하기 위해 대기 시간 증가 (4초)
-    time.sleep(4) 
     
     model = genai.GenerativeModel(model_name)
     prompt = f"""
@@ -172,15 +172,34 @@ def _generate_summary_api_call(text, model_name):
     
     뉴스: {text}
     """
-    response = model.generate_content(prompt)
-    return response.text
+    
+    # ★ 중요: 재시도(Retry) 로직 추가
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            # 시도할 때마다 대기 시간 증가 (Exponential Backoff)
+            # 1회차: 2초, 2회차: 4초, 3회차: 8초
+            sleep_time = (2 ** attempt) + random.uniform(0, 1)
+            time.sleep(sleep_time)
+            
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            if "429" in str(e):
+                # 마지막 시도였다면 에러 발생시키기
+                if attempt == max_retries - 1:
+                    raise e
+                # 아니면 계속 진행 (재시도)
+                continue
+            else:
+                # 429가 아닌 다른 에러는 즉시 중단
+                raise e
 
 def generate_summary_safe(text, model_name):
     """API 호출을 시도하고 에러를 처리하는 래퍼 함수"""
     try:
         return _generate_summary_api_call(text, model_name)
     except Exception as e:
-        # 에러가 발생하면 캐싱되지 않은 에러 메시지를 반환하거나 UI에서 처리하도록 함
         if "429" in str(e):
             return "RATE_LIMIT_ERROR"
         return f"ERROR: {str(e)}"
@@ -196,7 +215,7 @@ if api_key:
     with st.spinner(f"{selected_category} 뉴스를 가져오는 중..."):
         articles = fetch_news(selected_category)
         if articles:
-            st.success(f"✅ {selected_category} 최신 기사 5개를 가져왔습니다!")
+            st.success(f"✅ {selected_category} 최신 기사 3개를 가져왔습니다!")
         else:
             st.error(f"❌ {selected_category} 기사를 가져오지 못했습니다.")
 
@@ -217,9 +236,8 @@ if api_key:
              if summary_result == "RATE_LIMIT_ERROR":
                  st.markdown(f"""
                     <div class="error-box">
-                        ⚠️ 사용량이 초과되었습니다.<br>
-                        <small>잠시(10초) 기다렸다가 <b>새로고침(F5)</b>을 눌러주세요.<br>
-                        (이전 코드는 에러를 저장해버렸지만, 이번 코드는 저장하지 않으니 새로고침하면 됩니다!)</small>
+                        ⚠️ 사용량이 많아 요약을 가져오지 못했습니다.<br>
+                        <small>잠시 후 다시 시도해주세요.</small>
                     </div>
                  """, unsafe_allow_html=True)
              elif summary_result.startswith("ERROR:"):
