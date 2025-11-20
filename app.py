@@ -74,6 +74,32 @@ with st.sidebar:
         st.success("✅ API 키가 로드되었습니다")
 
     st.markdown("---")
+    
+    # --- Model Selection (Debug Fix) ---
+    st.subheader("🤖 모델 선택")
+    selected_model_name = "gemini-1.5-flash" # Default fallback
+    
+    if api_key:
+        try:
+            genai.configure(api_key=api_key)
+            # List available models
+            models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            # Clean up model names (remove 'models/')
+            model_options = [m.replace('models/', '') for m in models]
+            
+            if model_options:
+                selected_model_name = st.selectbox(
+                    "사용 가능한 모델을 선택하세요:",
+                    model_options,
+                    index=0 if "gemini-1.5-flash" not in model_options else model_options.index("gemini-1.5-flash")
+                )
+                st.info(f"선택된 모델: {selected_model_name}")
+            else:
+                st.error("사용 가능한 모델을 찾을 수 없습니다. API 키를 확인해주세요.")
+        except Exception as e:
+            st.error(f"모델 목록을 불러오는 중 오류 발생: {e}")
+
+    st.markdown("---")
     st.markdown("### 정보")
     st.markdown("Made with ❤️ using Streamlit & Gemini")
 
@@ -130,11 +156,14 @@ def fetch_news(category):
     return articles
 
 @st.cache_data(ttl=86400, show_spinner=False) # 요약문은 24시간 동안 저장!
-def generate_summary(text, _model):
+def generate_summary(text, model_name):
     """Gemini를 사용하여 3줄 요약을 생성합니다."""
     try:
         # API 호출 속도 조절을 위한 대기 (Rate Limit 방지)
         time.sleep(1) 
+        
+        # 모델 초기화 (캐싱된 함수 내부에서 모델 객체를 직접 받으면 안됨, 이름으로 받아야 함)
+        model = genai.GenerativeModel(model_name)
         
         prompt = f"""
         당신은 유능한 뉴스 조수입니다. 
@@ -143,7 +172,7 @@ def generate_summary(text, _model):
         
         뉴스: {text}
         """
-        response = _model.generate_content(prompt)
+        response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         if "429" in str(e):
@@ -158,9 +187,7 @@ categories = ["Politics", "Economy", "Society", "International", "IT/Science"]
 selected_category = st.radio("카테고리 선택", categories, horizontal=True)
 
 if api_key:
-    genai.configure(api_key=api_key)
-    # 가장 안정적인 모델로 변경 (gemini-pro)
-    model = genai.GenerativeModel('gemini-pro')
+    # genai.configure is called in the sidebar now
 
     with st.spinner(f"{selected_category} 뉴스를 가져오는 중..."):
         articles = fetch_news(selected_category)
@@ -184,7 +211,7 @@ if api_key:
         
         with summary_placeholder.container():
              # 캐시된 결과가 있는지 확인
-             summary = generate_summary(content_to_summarize, model)
+             summary = generate_summary(content_to_summarize, selected_model_name)
              
              if "사용량이 초과되었습니다" in summary:
                  st.markdown(f"""
