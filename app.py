@@ -75,29 +75,34 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # --- Model Selection (Debug Fix) ---
+    # --- Model Selection ---
     st.subheader("🤖 모델 선택")
-    selected_model_name = "gemini-1.5-flash" # Default fallback
+    selected_model_name = "gemini-1.5-flash" # Default
     
     if api_key:
         try:
             genai.configure(api_key=api_key)
             # List available models
             models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            # Clean up model names (remove 'models/')
+            # Clean up model names
             model_options = [m.replace('models/', '') for m in models]
             
             if model_options:
+                # Default to gemini-1.5-flash if available, else first option
+                default_index = 0
+                if "gemini-1.5-flash" in model_options:
+                    default_index = model_options.index("gemini-1.5-flash")
+                
                 selected_model_name = st.selectbox(
                     "사용 가능한 모델을 선택하세요:",
                     model_options,
-                    index=0 if "gemini-1.5-flash" not in model_options else model_options.index("gemini-1.5-flash")
+                    index=default_index
                 )
                 st.info(f"선택된 모델: {selected_model_name}")
             else:
-                st.error("사용 가능한 모델을 찾을 수 없습니다. API 키를 확인해주세요.")
+                st.error("사용 가능한 모델을 찾을 수 없습니다.")
         except Exception as e:
-            st.error(f"모델 목록을 불러오는 중 오류 발생: {e}")
+            st.error(f"모델 목록 로드 실패: {e}")
 
     st.markdown("---")
     st.markdown("### 정보")
@@ -105,10 +110,9 @@ with st.sidebar:
 
 # --- Functions ---
 
-@st.cache_data(ttl=3600)  # 뉴스는 1시간 동안 저장(캐싱)
+@st.cache_data(ttl=3600)
 def fetch_news(category):
     """카테고리에 맞는 구글 뉴스 RSS를 가져옵니다."""
-    # 카테고리별 정확한 URL 설정 (Google News KR Standard URLs)
     if category == "Politics":
         url = "https://news.google.com/rss/headlines/section/topic/POLITICS?hl=ko&gl=KR&ceid=KR:ko"
     elif category == "Economy":
@@ -122,7 +126,6 @@ def fetch_news(category):
     else:
         url = "https://news.google.com/rss?hl=ko&gl=KR&ceid=KR:ko"
 
-    # 구글의 차단을 피하기 위해 '사람인 척' 하는 헤더 추가
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
@@ -136,12 +139,11 @@ def fetch_news(category):
         return []
 
     articles = []
-    
     if not feed.entries:
-        st.warning("뉴스를 찾을 수 없습니다. 구글이 요청을 차단했을 수 있습니다.")
+        st.warning("뉴스를 찾을 수 없습니다.")
         return []
 
-    for entry in feed.entries[:5]:  # 상위 5개 기사
+    for entry in feed.entries[:5]:
         try:
             published = parser.parse(entry.published).strftime("%Y-%m-%d %H:%M")
         except:
@@ -155,29 +157,33 @@ def fetch_news(category):
         })
     return articles
 
-@st.cache_data(ttl=86400, show_spinner=False) # 요약문은 24시간 동안 저장!
-def generate_summary(text, model_name):
-    """Gemini를 사용하여 3줄 요약을 생성합니다."""
+# ★ 중요: 캐싱 함수 분리 (에러는 캐싱하지 않기 위함)
+@st.cache_data(ttl=86400, show_spinner=False)
+def _generate_summary_api_call(text, model_name):
+    """실제 API 호출을 수행하는 함수 (성공 시에만 결과 반환)"""
+    # 속도 제한을 피하기 위해 대기 시간 증가 (4초)
+    time.sleep(4) 
+    
+    model = genai.GenerativeModel(model_name)
+    prompt = f"""
+    당신은 유능한 뉴스 조수입니다. 
+    다음 뉴스 기사의 제목과 내용을 바탕으로 핵심 내용을 정확히 3개의 글머리 기호로 요약해 주세요.
+    한국어로 간결하고 이해하기 쉽게 작성해 주세요.
+    
+    뉴스: {text}
+    """
+    response = model.generate_content(prompt)
+    return response.text
+
+def generate_summary_safe(text, model_name):
+    """API 호출을 시도하고 에러를 처리하는 래퍼 함수"""
     try:
-        # API 호출 속도 조절을 위한 대기 (Rate Limit 방지)
-        time.sleep(1) 
-        
-        # 모델 초기화 (캐싱된 함수 내부에서 모델 객체를 직접 받으면 안됨, 이름으로 받아야 함)
-        model = genai.GenerativeModel(model_name)
-        
-        prompt = f"""
-        당신은 유능한 뉴스 조수입니다. 
-        다음 뉴스 기사의 제목과 내용을 바탕으로 핵심 내용을 정확히 3개의 글머리 기호로 요약해 주세요.
-        한국어로 간결하고 이해하기 쉽게 작성해 주세요.
-        
-        뉴스: {text}
-        """
-        response = model.generate_content(prompt)
-        return response.text
+        return _generate_summary_api_call(text, model_name)
     except Exception as e:
+        # 에러가 발생하면 캐싱되지 않은 에러 메시지를 반환하거나 UI에서 처리하도록 함
         if "429" in str(e):
-            return "⚠️ 사용량이 초과되었습니다. 잠시 후 다시 시도해주세요."
-        return f"⚠️ 오류 발생: {str(e)}"
+            return "RATE_LIMIT_ERROR"
+        return f"ERROR: {str(e)}"
 
 # --- Main UI ---
 
@@ -187,8 +193,6 @@ categories = ["Politics", "Economy", "Society", "International", "IT/Science"]
 selected_category = st.radio("카테고리 선택", categories, horizontal=True)
 
 if api_key:
-    # genai.configure is called in the sidebar now
-
     with st.spinner(f"{selected_category} 뉴스를 가져오는 중..."):
         articles = fetch_news(selected_category)
         if articles:
@@ -203,28 +207,33 @@ if api_key:
             <div class="news-meta">📅 {article['published']}</div>
         """, unsafe_allow_html=True)
         
-        # Generate Summary
         content_to_summarize = f"{article['title']} - {article['summary']}"
-        
-        # Use a placeholder to show loading state for each summary individually
         summary_placeholder = st.empty()
         
         with summary_placeholder.container():
-             # 캐시된 결과가 있는지 확인
-             summary = generate_summary(content_to_summarize, selected_model_name)
+             # 래퍼 함수 호출
+             summary_result = generate_summary_safe(content_to_summarize, selected_model_name)
              
-             if "사용량이 초과되었습니다" in summary:
+             if summary_result == "RATE_LIMIT_ERROR":
                  st.markdown(f"""
                     <div class="error-box">
-                        {summary}<br>
-                        <small>걱정 마세요! 결과가 저장되고 있으니 1분 뒤에 새로고침 해보세요.</small>
+                        ⚠️ 사용량이 초과되었습니다.<br>
+                        <small>잠시(10초) 기다렸다가 <b>새로고침(F5)</b>을 눌러주세요.<br>
+                        (이전 코드는 에러를 저장해버렸지만, 이번 코드는 저장하지 않으니 새로고침하면 됩니다!)</small>
+                    </div>
+                 """, unsafe_allow_html=True)
+             elif summary_result.startswith("ERROR:"):
+                 st.markdown(f"""
+                    <div class="error-box">
+                        ⚠️ 오류 발생: {summary_result}<br>
+                        <small>모델을 다른 것으로 변경해보세요.</small>
                     </div>
                  """, unsafe_allow_html=True)
              else:
                  st.markdown(f"""
                     <div class="summary-box">
                         <div class="summary-title">⚡ 3줄 요약</div>
-                        {summary}
+                        {summary_result}
                     </div>
                  """, unsafe_allow_html=True)
 
